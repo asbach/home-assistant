@@ -1,157 +1,217 @@
-"""
-Component to interface with universal remote control devices.
+"""Support to interface with universal remote control devices."""
+from __future__ import annotations
 
-For more details about this component, please refer to the documentation
-at https://home-assistant.io/components/remote/
-"""
-import asyncio
+from collections.abc import Iterable
 from datetime import timedelta
 import functools as ft
 import logging
-import os
+from typing import Any, cast, final
 
 import voluptuous as vol
 
-from homeassistant.config import load_yaml_config_file
-from homeassistant.helpers.entity_component import EntityComponent
-from homeassistant.helpers.entity import ToggleEntity
-import homeassistant.helpers.config_validation as cv
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
-    STATE_ON, SERVICE_TURN_ON, SERVICE_TURN_OFF, ATTR_ENTITY_ID)
-from homeassistant.components import group
-from homeassistant.helpers.config_validation import PLATFORM_SCHEMA  # noqa
+    ATTR_COMMAND,
+    SERVICE_TOGGLE,
+    SERVICE_TURN_OFF,
+    SERVICE_TURN_ON,
+    STATE_ON,
+)
+from homeassistant.core import HomeAssistant
+import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.config_validation import (  # noqa: F401
+    PLATFORM_SCHEMA,
+    PLATFORM_SCHEMA_BASE,
+    make_entity_service_schema,
+)
+from homeassistant.helpers.entity import ToggleEntity
+from homeassistant.helpers.entity_component import EntityComponent
+from homeassistant.helpers.typing import ConfigType
+from homeassistant.loader import bind_hass
+
+# mypy: allow-untyped-calls, allow-untyped-defs, no-check-untyped-defs
 
 _LOGGER = logging.getLogger(__name__)
 
-ATTR_ACTIVITY = 'activity'
-ATTR_COMMAND = 'command'
-ATTR_DEVICE = 'device'
+ATTR_ACTIVITY = "activity"
+ATTR_ACTIVITY_LIST = "activity_list"
+ATTR_CURRENT_ACTIVITY = "current_activity"
+ATTR_COMMAND_TYPE = "command_type"
+ATTR_DEVICE = "device"
+ATTR_NUM_REPEATS = "num_repeats"
+ATTR_DELAY_SECS = "delay_secs"
+ATTR_HOLD_SECS = "hold_secs"
+ATTR_ALTERNATIVE = "alternative"
+ATTR_TIMEOUT = "timeout"
 
-DOMAIN = 'remote'
+DOMAIN = "remote"
+SCAN_INTERVAL = timedelta(seconds=30)
 
-ENTITY_ID_ALL_REMOTES = group.ENTITY_ID_FORMAT.format('all_remotes')
-ENTITY_ID_FORMAT = DOMAIN + '.{}'
-
-GROUP_NAME_ALL_REMOTES = 'all remotes'
+ENTITY_ID_FORMAT = DOMAIN + ".{}"
 
 MIN_TIME_BETWEEN_SCANS = timedelta(seconds=10)
 
-SCAN_INTERVAL = timedelta(seconds=30)
-SERVICE_SEND_COMMAND = 'send_command'
-SERVICE_SYNC = 'sync'
+SERVICE_SEND_COMMAND = "send_command"
+SERVICE_LEARN_COMMAND = "learn_command"
+SERVICE_DELETE_COMMAND = "delete_command"
+SERVICE_SYNC = "sync"
 
-REMOTE_SERVICE_SCHEMA = vol.Schema({
-    vol.Required(ATTR_ENTITY_ID): cv.entity_ids,
-})
+DEFAULT_NUM_REPEATS = 1
+DEFAULT_DELAY_SECS = 0.4
+DEFAULT_HOLD_SECS = 0
 
-REMOTE_SERVICE_TURN_ON_SCHEMA = REMOTE_SERVICE_SCHEMA.extend({
-    vol.Optional(ATTR_ACTIVITY): cv.string
-})
+SUPPORT_LEARN_COMMAND = 1
+SUPPORT_DELETE_COMMAND = 2
+SUPPORT_ACTIVITY = 4
 
-REMOTE_SERVICE_SEND_COMMAND_SCHEMA = REMOTE_SERVICE_SCHEMA.extend({
-    vol.Required(ATTR_DEVICE): cv.string,
-    vol.Required(ATTR_COMMAND): cv.string,
-})
+REMOTE_SERVICE_ACTIVITY_SCHEMA = make_entity_service_schema(
+    {vol.Optional(ATTR_ACTIVITY): cv.string}
+)
 
 
-def is_on(hass, entity_id=None):
+@bind_hass
+def is_on(hass: HomeAssistant, entity_id: str) -> bool:
     """Return if the remote is on based on the statemachine."""
-    entity_id = entity_id or ENTITY_ID_ALL_REMOTES
     return hass.states.is_state(entity_id, STATE_ON)
 
 
-def turn_on(hass, activity=None, entity_id=None):
-    """Turn all or specified remote on."""
-    data = {ATTR_ACTIVITY: activity}
-    if entity_id:
-        data[ATTR_ENTITY_ID] = entity_id
-    hass.services.call(DOMAIN, SERVICE_TURN_ON, data)
-
-
-def turn_off(hass, entity_id=None):
-    """Turn all or specified remote off."""
-    data = {ATTR_ENTITY_ID: entity_id} if entity_id else None
-    hass.services.call(DOMAIN, SERVICE_TURN_OFF, data)
-
-
-def send_command(hass, device, command, entity_id=None):
-    """Send a command to a device."""
-    data = {ATTR_DEVICE: str(device), ATTR_COMMAND: command}
-    if entity_id:
-        data[ATTR_ENTITY_ID] = entity_id
-    hass.services.call(DOMAIN, SERVICE_SEND_COMMAND, data)
-
-
-@asyncio.coroutine
-def async_setup(hass, config):
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Track states and offer events for remotes."""
-    component = EntityComponent(
-        _LOGGER, DOMAIN, hass, SCAN_INTERVAL, GROUP_NAME_ALL_REMOTES)
-    yield from component.async_setup(config)
+    component = hass.data[DOMAIN] = EntityComponent(
+        _LOGGER, DOMAIN, hass, SCAN_INTERVAL
+    )
+    await component.async_setup(config)
 
-    @asyncio.coroutine
-    def async_handle_remote_service(service):
-        """Handle calls to the remote services."""
-        target_remotes = component.async_extract_from_service(service)
+    component.async_register_entity_service(
+        SERVICE_TURN_OFF, REMOTE_SERVICE_ACTIVITY_SCHEMA, "async_turn_off"
+    )
 
-        activity_id = service.data.get(ATTR_ACTIVITY)
-        device = service.data.get(ATTR_DEVICE)
-        command = service.data.get(ATTR_COMMAND)
+    component.async_register_entity_service(
+        SERVICE_TURN_ON, REMOTE_SERVICE_ACTIVITY_SCHEMA, "async_turn_on"
+    )
 
-        for remote in target_remotes:
-            if service.service == SERVICE_TURN_ON:
-                yield from remote.async_turn_on(activity=activity_id)
-            elif service.service == SERVICE_SEND_COMMAND:
-                yield from remote.async_send_command(
-                    device=device, command=command)
-            else:
-                yield from remote.async_turn_off()
+    component.async_register_entity_service(
+        SERVICE_TOGGLE, REMOTE_SERVICE_ACTIVITY_SCHEMA, "async_toggle"
+    )
 
-        update_tasks = []
-        for remote in target_remotes:
-            if not remote.should_poll:
-                continue
+    component.async_register_entity_service(
+        SERVICE_SEND_COMMAND,
+        {
+            vol.Required(ATTR_COMMAND): vol.All(cv.ensure_list, [cv.string]),
+            vol.Optional(ATTR_DEVICE): cv.string,
+            vol.Optional(
+                ATTR_NUM_REPEATS, default=DEFAULT_NUM_REPEATS
+            ): cv.positive_int,
+            vol.Optional(ATTR_DELAY_SECS): vol.Coerce(float),
+            vol.Optional(ATTR_HOLD_SECS, default=DEFAULT_HOLD_SECS): vol.Coerce(float),
+        },
+        "async_send_command",
+    )
 
-            update_coro = hass.loop.create_task(
-                remote.async_update_ha_state(True))
-            if hasattr(remote, 'async_update'):
-                update_tasks.append(update_coro)
-            else:
-                yield from update_coro
+    component.async_register_entity_service(
+        SERVICE_LEARN_COMMAND,
+        {
+            vol.Optional(ATTR_DEVICE): cv.string,
+            vol.Optional(ATTR_COMMAND): vol.All(cv.ensure_list, [cv.string]),
+            vol.Optional(ATTR_COMMAND_TYPE): cv.string,
+            vol.Optional(ATTR_ALTERNATIVE): cv.boolean,
+            vol.Optional(ATTR_TIMEOUT): cv.positive_int,
+        },
+        "async_learn_command",
+    )
 
-        if update_tasks:
-            yield from asyncio.wait(update_tasks, loop=hass.loop)
-
-    descriptions = yield from hass.loop.run_in_executor(
-        None, load_yaml_config_file, os.path.join(
-            os.path.dirname(__file__), 'services.yaml'))
-    hass.services.async_register(
-        DOMAIN, SERVICE_TURN_OFF, async_handle_remote_service,
-        descriptions.get(SERVICE_TURN_OFF),
-        schema=REMOTE_SERVICE_SCHEMA)
-    hass.services.async_register(
-        DOMAIN, SERVICE_TURN_ON, async_handle_remote_service,
-        descriptions.get(SERVICE_TURN_ON),
-        schema=REMOTE_SERVICE_TURN_ON_SCHEMA)
-    hass.services.async_register(
-        DOMAIN, SERVICE_SEND_COMMAND, async_handle_remote_service,
-        descriptions.get(SERVICE_SEND_COMMAND),
-        schema=REMOTE_SERVICE_SEND_COMMAND_SCHEMA)
+    component.async_register_entity_service(
+        SERVICE_DELETE_COMMAND,
+        {
+            vol.Required(ATTR_COMMAND): vol.All(cv.ensure_list, [cv.string]),
+            vol.Optional(ATTR_DEVICE): cv.string,
+        },
+        "async_delete_command",
+    )
 
     return True
 
 
-class RemoteDevice(ToggleEntity):
-    """Representation of a remote."""
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up a config entry."""
+    return await cast(EntityComponent, hass.data[DOMAIN]).async_setup_entry(entry)
 
-    def send_command(self, **kwargs):
-        """Send a command to a device."""
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    return await cast(EntityComponent, hass.data[DOMAIN]).async_unload_entry(entry)
+
+
+class RemoteEntity(ToggleEntity):
+    """Base class for remote entities."""
+
+    _attr_activity_list: list[str] | None = None
+    _attr_current_activity: str | None = None
+    _attr_supported_features: int = 0
+
+    @property
+    def supported_features(self) -> int:
+        """Flag supported features."""
+        return self._attr_supported_features
+
+    @property
+    def current_activity(self) -> str | None:
+        """Active activity."""
+        return self._attr_current_activity
+
+    @property
+    def activity_list(self) -> list[str] | None:
+        """List of available activities."""
+        return self._attr_activity_list
+
+    @final
+    @property
+    def state_attributes(self) -> dict[str, Any] | None:
+        """Return optional state attributes."""
+        if not self.supported_features & SUPPORT_ACTIVITY:
+            return None
+
+        return {
+            ATTR_ACTIVITY_LIST: self.activity_list,
+            ATTR_CURRENT_ACTIVITY: self.current_activity,
+        }
+
+    def send_command(self, command: Iterable[str], **kwargs: Any) -> None:
+        """Send commands to a device."""
         raise NotImplementedError()
 
-    def async_send_command(self, **kwargs):
-        """Send a command to a device.
+    async def async_send_command(self, command: Iterable[str], **kwargs: Any) -> None:
+        """Send commands to a device."""
+        await self.hass.async_add_executor_job(
+            ft.partial(self.send_command, command, **kwargs)
+        )
 
-        This method must be run in the event loop and returns a coroutine.
-        """
-        return self.hass.loop.run_in_executor(
-            None, ft.partial(self.send_command, **kwargs))
+    def learn_command(self, **kwargs: Any) -> None:
+        """Learn a command from a device."""
+        raise NotImplementedError()
+
+    async def async_learn_command(self, **kwargs: Any) -> None:
+        """Learn a command from a device."""
+        await self.hass.async_add_executor_job(ft.partial(self.learn_command, **kwargs))
+
+    def delete_command(self, **kwargs: Any) -> None:
+        """Delete commands from the database."""
+        raise NotImplementedError()
+
+    async def async_delete_command(self, **kwargs: Any) -> None:
+        """Delete commands from the database."""
+        await self.hass.async_add_executor_job(
+            ft.partial(self.delete_command, **kwargs)
+        )
+
+
+class RemoteDevice(RemoteEntity):
+    """Representation of a remote (for backwards compatibility)."""
+
+    def __init_subclass__(cls, **kwargs):
+        """Print deprecation warning."""
+        super().__init_subclass__(**kwargs)
+        _LOGGER.warning(
+            "RemoteDevice is deprecated, modify %s to extend RemoteEntity",
+            cls.__name__,
+        )

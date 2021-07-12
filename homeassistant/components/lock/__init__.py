@@ -1,149 +1,161 @@
-"""
-Component to interface with various locks that can be controlled remotely.
+"""Component to interface with locks that can be controlled remotely."""
+from __future__ import annotations
 
-For more details about this component, please refer to the documentation
-at https://home-assistant.io/components/lock/
-"""
 from datetime import timedelta
+import functools as ft
 import logging
-import os
+from typing import Any, final
 
 import voluptuous as vol
 
-from homeassistant.config import load_yaml_config_file
-from homeassistant.helpers.entity_component import EntityComponent
-from homeassistant.helpers.entity import Entity
-from homeassistant.helpers.config_validation import PLATFORM_SCHEMA  # noqa
-import homeassistant.helpers.config_validation as cv
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
-    ATTR_CODE, ATTR_CODE_FORMAT, ATTR_ENTITY_ID, STATE_LOCKED, STATE_UNLOCKED,
-    STATE_UNKNOWN, SERVICE_LOCK, SERVICE_UNLOCK)
-from homeassistant.components import group
-
-DOMAIN = 'lock'
-SCAN_INTERVAL = timedelta(seconds=30)
-ATTR_CHANGED_BY = 'changed_by'
-
-GROUP_NAME_ALL_LOCKS = 'all locks'
-ENTITY_ID_ALL_LOCKS = group.ENTITY_ID_FORMAT.format('all_locks')
-
-ENTITY_ID_FORMAT = DOMAIN + '.{}'
-
-MIN_TIME_BETWEEN_SCANS = timedelta(seconds=10)
-
-LOCK_SERVICE_SCHEMA = vol.Schema({
-    vol.Optional(ATTR_ENTITY_ID): cv.entity_ids,
-    vol.Optional(ATTR_CODE): cv.string,
-})
+    ATTR_CODE,
+    ATTR_CODE_FORMAT,
+    SERVICE_LOCK,
+    SERVICE_OPEN,
+    SERVICE_UNLOCK,
+    STATE_LOCKED,
+    STATE_UNLOCKED,
+)
+from homeassistant.core import HomeAssistant
+import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.config_validation import (  # noqa: F401
+    PLATFORM_SCHEMA,
+    PLATFORM_SCHEMA_BASE,
+    make_entity_service_schema,
+)
+from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.entity_component import EntityComponent
+from homeassistant.helpers.typing import ConfigType, StateType
 
 _LOGGER = logging.getLogger(__name__)
 
+ATTR_CHANGED_BY = "changed_by"
 
-def is_locked(hass, entity_id=None):
-    """Return if the lock is locked based on the statemachine."""
-    entity_id = entity_id or ENTITY_ID_ALL_LOCKS
-    return hass.states.is_state(entity_id, STATE_LOCKED)
+DOMAIN = "lock"
+SCAN_INTERVAL = timedelta(seconds=30)
 
+ENTITY_ID_FORMAT = DOMAIN + ".{}"
 
-def lock(hass, entity_id=None, code=None):
-    """Lock all or specified locks."""
-    data = {}
-    if code:
-        data[ATTR_CODE] = code
-    if entity_id:
-        data[ATTR_ENTITY_ID] = entity_id
+MIN_TIME_BETWEEN_SCANS = timedelta(seconds=10)
 
-    hass.services.call(DOMAIN, SERVICE_LOCK, data)
+LOCK_SERVICE_SCHEMA = make_entity_service_schema({vol.Optional(ATTR_CODE): cv.string})
 
+# Bitfield of features supported by the lock entity
+SUPPORT_OPEN = 1
 
-def unlock(hass, entity_id=None, code=None):
-    """Unlock all or specified locks."""
-    data = {}
-    if code:
-        data[ATTR_CODE] = code
-    if entity_id:
-        data[ATTR_ENTITY_ID] = entity_id
-
-    hass.services.call(DOMAIN, SERVICE_UNLOCK, data)
+PROP_TO_ATTR = {"changed_by": ATTR_CHANGED_BY, "code_format": ATTR_CODE_FORMAT}
 
 
-def setup(hass, config):
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Track states and offer events for locks."""
-    component = EntityComponent(
-        _LOGGER, DOMAIN, hass, SCAN_INTERVAL, GROUP_NAME_ALL_LOCKS)
-    component.setup(config)
+    component = hass.data[DOMAIN] = EntityComponent(
+        _LOGGER, DOMAIN, hass, SCAN_INTERVAL
+    )
 
-    def handle_lock_service(service):
-        """Handle calls to the lock services."""
-        target_locks = component.extract_from_service(service)
+    await component.async_setup(config)
 
-        code = service.data.get(ATTR_CODE)
+    component.async_register_entity_service(
+        SERVICE_UNLOCK, LOCK_SERVICE_SCHEMA, "async_unlock"
+    )
+    component.async_register_entity_service(
+        SERVICE_LOCK, LOCK_SERVICE_SCHEMA, "async_lock"
+    )
+    component.async_register_entity_service(
+        SERVICE_OPEN, LOCK_SERVICE_SCHEMA, "async_open"
+    )
 
-        for item in target_locks:
-            if service.service == SERVICE_LOCK:
-                item.lock(code=code)
-            else:
-                item.unlock(code=code)
-
-        for item in target_locks:
-            if not item.should_poll:
-                continue
-
-            item.update_ha_state(True)
-
-    descriptions = load_yaml_config_file(
-        os.path.join(os.path.dirname(__file__), 'services.yaml'))
-    hass.services.register(DOMAIN, SERVICE_UNLOCK, handle_lock_service,
-                           descriptions.get(SERVICE_UNLOCK),
-                           schema=LOCK_SERVICE_SCHEMA)
-    hass.services.register(DOMAIN, SERVICE_LOCK, handle_lock_service,
-                           descriptions.get(SERVICE_LOCK),
-                           schema=LOCK_SERVICE_SCHEMA)
     return True
 
 
-class LockDevice(Entity):
-    """Representation of a lock."""
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up a config entry."""
+    component: EntityComponent = hass.data[DOMAIN]
+    return await component.async_setup_entry(entry)
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    component: EntityComponent = hass.data[DOMAIN]
+    return await component.async_unload_entry(entry)
+
+
+class LockEntity(Entity):
+    """Base class for lock entities."""
+
+    _attr_changed_by: str | None = None
+    _attr_code_format: str | None = None
+    _attr_is_locked: bool | None = None
+    _attr_state: None = None
 
     @property
-    def changed_by(self):
+    def changed_by(self) -> str | None:
         """Last change triggered by."""
-        return None
+        return self._attr_changed_by
 
-    # pylint: disable=no-self-use
     @property
-    def code_format(self):
+    def code_format(self) -> str | None:
         """Regex for code format or None if no code is required."""
-        return None
+        return self._attr_code_format
 
     @property
-    def is_locked(self):
+    def is_locked(self) -> bool | None:
         """Return true if the lock is locked."""
-        return None
+        return self._attr_is_locked
 
-    def lock(self, **kwargs):
+    def lock(self, **kwargs: Any) -> None:
         """Lock the lock."""
         raise NotImplementedError()
 
-    def unlock(self, **kwargs):
+    async def async_lock(self, **kwargs: Any) -> None:
+        """Lock the lock."""
+        await self.hass.async_add_executor_job(ft.partial(self.lock, **kwargs))
+
+    def unlock(self, **kwargs: Any) -> None:
         """Unlock the lock."""
         raise NotImplementedError()
 
+    async def async_unlock(self, **kwargs: Any) -> None:
+        """Unlock the lock."""
+        await self.hass.async_add_executor_job(ft.partial(self.unlock, **kwargs))
+
+    def open(self, **kwargs: Any) -> None:
+        """Open the door latch."""
+        raise NotImplementedError()
+
+    async def async_open(self, **kwargs: Any) -> None:
+        """Open the door latch."""
+        await self.hass.async_add_executor_job(ft.partial(self.open, **kwargs))
+
+    @final
     @property
-    def state_attributes(self):
+    def state_attributes(self) -> dict[str, StateType]:
         """Return the state attributes."""
-        if self.code_format is None:
-            return None
-        state_attr = {
-            ATTR_CODE_FORMAT: self.code_format,
-            ATTR_CHANGED_BY: self.changed_by
-        }
+        state_attr = {}
+        for prop, attr in PROP_TO_ATTR.items():
+            value = getattr(self, prop)
+            if value is not None:
+                state_attr[attr] = value
         return state_attr
 
+    @final
     @property
-    def state(self):
+    def state(self) -> str | None:
         """Return the state."""
         locked = self.is_locked
         if locked is None:
-            return STATE_UNKNOWN
+            return None
         return STATE_LOCKED if locked else STATE_UNLOCKED
+
+
+class LockDevice(LockEntity):
+    """Representation of a lock (for backwards compatibility)."""
+
+    def __init_subclass__(cls, **kwargs: Any):
+        """Print deprecation warning."""
+        super().__init_subclass__(**kwargs)  # type: ignore[call-arg]
+        _LOGGER.warning(
+            "LockDevice is deprecated, modify %s to extend LockEntity",
+            cls.__name__,
+        )

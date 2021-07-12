@@ -1,21 +1,22 @@
-FROM python:3.5
-MAINTAINER Paulus Schoutsen <Paulus@PaulusSchoutsen.nl>
+ARG BUILD_FROM
+FROM ${BUILD_FROM}
 
-VOLUME /config
+# Synchronize with homeassistant/core.py:async_stop
+ENV \
+    S6_SERVICES_GRACETIME=220000
 
-RUN mkdir -p /usr/src/app
-WORKDIR /usr/src/app
+WORKDIR /usr/src
 
-# Copy build scripts
-COPY script/setup_docker_prereqs script/build_python_openzwave script/build_libcec script/
-RUN script/setup_docker_prereqs
+## Setup Home Assistant
+COPY . homeassistant/
+RUN \
+    pip3 install --no-cache-dir --no-index --only-binary=:all: --find-links "${WHEELS_LINKS}" \
+    -r homeassistant/requirements_all.txt \
+    && pip3 install --no-cache-dir --no-index --only-binary=:all: --find-links "${WHEELS_LINKS}" \
+    -e ./homeassistant \
+    && python3 -m compileall homeassistant/homeassistant
 
-# Install hass component dependencies
-COPY requirements_all.txt requirements_all.txt
-RUN pip3 install --no-cache-dir -r requirements_all.txt && \
-    pip3 install --no-cache-dir mysqlclient psycopg2 uvloop
+# Home Assistant S6-Overlay
+COPY rootfs /
 
-# Copy source
-COPY . .
-
-CMD [ "python", "-m", "homeassistant", "--config", "/config" ]
+WORKDIR /config
