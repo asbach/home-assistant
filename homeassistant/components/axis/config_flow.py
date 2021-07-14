@@ -1,6 +1,7 @@
 """Config flow to configure Axis devices."""
 
 from ipaddress import ip_address
+from urllib.parse import urlsplit
 
 import voluptuous as vol
 
@@ -38,7 +39,6 @@ class AxisFlowHandler(config_entries.ConfigFlow, domain=AXIS_DOMAIN):
     """Handle a Axis config flow."""
 
     VERSION = 3
-    CONNECTION_CLASS = config_entries.CONN_CLASS_LOCAL_PUSH
 
     @staticmethod
     @callback
@@ -137,7 +137,6 @@ class AxisFlowHandler(config_entries.ConfigFlow, domain=AXIS_DOMAIN):
 
     async def async_step_reauth(self, device_config: dict):
         """Trigger a reauthentication flow."""
-        # pylint: disable=no-member # https://github.com/PyCQA/pylint/issues/3167
         self.context["title_placeholders"] = {
             CONF_NAME: device_config[CONF_NAME],
             CONF_HOST: device_config[CONF_HOST],
@@ -157,14 +156,26 @@ class AxisFlowHandler(config_entries.ConfigFlow, domain=AXIS_DOMAIN):
         return await self._process_discovered_device(
             {
                 CONF_HOST: discovery_info[IP_ADDRESS],
-                CONF_MAC: format_mac(discovery_info.get(MAC_ADDRESS)),
+                CONF_MAC: format_mac(discovery_info.get(MAC_ADDRESS, "")),
                 CONF_NAME: discovery_info.get(HOSTNAME),
                 CONF_PORT: DEFAULT_PORT,
             }
         )
 
+    async def async_step_ssdp(self, discovery_info: dict):
+        """Prepare configuration for a SSDP discovered Axis device."""
+        url = urlsplit(discovery_info["presentationURL"])
+        return await self._process_discovered_device(
+            {
+                CONF_HOST: url.hostname,
+                CONF_MAC: format_mac(discovery_info["serialNumber"]),
+                CONF_NAME: f"{discovery_info['friendlyName']}",
+                CONF_PORT: url.port,
+            }
+        )
+
     async def async_step_zeroconf(self, discovery_info: dict):
-        """Prepare configuration for a discovered Axis device."""
+        """Prepare configuration for a Zeroconf discovered Axis device."""
         return await self._process_discovered_device(
             {
                 CONF_HOST: discovery_info[CONF_HOST],
@@ -191,7 +202,6 @@ class AxisFlowHandler(config_entries.ConfigFlow, domain=AXIS_DOMAIN):
             }
         )
 
-        # pylint: disable=no-member # https://github.com/PyCQA/pylint/issues/3167
         self.context["title_placeholders"] = {
             CONF_NAME: device[CONF_NAME],
             CONF_HOST: device[CONF_HOST],
@@ -233,8 +243,7 @@ class AxisOptionsFlowHandler(config_entries.OptionsFlow):
 
         # Stream profiles
 
-        if vapix.params.stream_profiles_max_groups > 0:
-
+        if vapix.stream_profiles or vapix.params.stream_profiles_max_groups > 0:
             stream_profiles = [DEFAULT_STREAM_PROFILE]
             for profile in vapix.streaming_profiles:
                 stream_profiles.append(profile.name)

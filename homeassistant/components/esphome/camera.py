@@ -1,20 +1,24 @@
 """Support for ESPHome cameras."""
+from __future__ import annotations
+
 import asyncio
-from typing import Optional
+from typing import Any
 
 from aioesphomeapi import CameraInfo, CameraState
+from aiohttp import web
 
 from homeassistant.components import camera
 from homeassistant.components.camera import Camera
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
-from homeassistant.helpers.typing import HomeAssistantType
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import EsphomeBaseEntity, platform_async_setup_entry
 
 
 async def async_setup_entry(
-    hass: HomeAssistantType, entry: ConfigEntry, async_add_entities
+    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up esphome cameras based on a config entry."""
     await platform_async_setup_entry(
@@ -28,22 +32,18 @@ async def async_setup_entry(
     )
 
 
-class EsphomeCamera(Camera, EsphomeBaseEntity):
+# Pylint gets confused with the EsphomeEntity generics -> let mypy handle member checking
+# pylint: disable=no-member
+
+
+class EsphomeCamera(Camera, EsphomeBaseEntity[CameraInfo, CameraState]):
     """A camera implementation for ESPHome."""
 
-    def __init__(self, entry_id: str, component_key: str, key: int):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialize."""
         Camera.__init__(self)
-        EsphomeBaseEntity.__init__(self, entry_id, component_key, key)
+        EsphomeBaseEntity.__init__(self, *args, **kwargs)
         self._image_cond = asyncio.Condition()
-
-    @property
-    def _static_info(self) -> CameraInfo:
-        return super()._static_info
-
-    @property
-    def _state(self) -> Optional[CameraState]:
-        return super()._state
 
     async def async_added_to_hass(self) -> None:
         """Register callbacks."""
@@ -67,7 +67,7 @@ class EsphomeCamera(Camera, EsphomeBaseEntity):
         async with self._image_cond:
             self._image_cond.notify_all()
 
-    async def async_camera_image(self) -> Optional[bytes]:
+    async def async_camera_image(self) -> bytes | None:
         """Return single camera image bytes."""
         if not self.available:
             return None
@@ -76,9 +76,9 @@ class EsphomeCamera(Camera, EsphomeBaseEntity):
             await self._image_cond.wait()
             if not self.available:
                 return None
-            return self._state.image[:]
+            return self._state.data[:]
 
-    async def _async_camera_stream_image(self) -> Optional[bytes]:
+    async def _async_camera_stream_image(self) -> bytes | None:
         """Return a single camera image in a stream."""
         if not self.available:
             return None
@@ -87,9 +87,11 @@ class EsphomeCamera(Camera, EsphomeBaseEntity):
             await self._image_cond.wait()
             if not self.available:
                 return None
-            return self._state.image[:]
+            return self._state.data[:]
 
-    async def handle_async_mjpeg_stream(self, request):
+    async def handle_async_mjpeg_stream(
+        self, request: web.Request
+    ) -> web.StreamResponse:
         """Serve an HTTP MJPEG stream from the camera."""
         return await camera.async_get_still_stream(
             request, self._async_camera_stream_image, camera.DEFAULT_CONTENT_TYPE, 0.0

@@ -1,21 +1,24 @@
 """Support for BME280 temperature, humidity and pressure sensor."""
+from contextlib import suppress
 from datetime import timedelta
 from functools import partial
 import logging
 
 from i2csense.bme280 import BME280  # pylint: disable=import-error
-import smbus  # pylint: disable=import-error
+import smbus
 import voluptuous as vol
 
-from homeassistant.components.sensor import PLATFORM_SCHEMA
+from homeassistant.components.sensor import PLATFORM_SCHEMA, SensorEntity
 from homeassistant.const import (
     CONF_MONITORED_CONDITIONS,
     CONF_NAME,
+    DEVICE_CLASS_HUMIDITY,
+    DEVICE_CLASS_PRESSURE,
+    DEVICE_CLASS_TEMPERATURE,
     PERCENTAGE,
     TEMP_FAHRENHEIT,
 )
 import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.entity import Entity
 from homeassistant.util import Throttle
 from homeassistant.util.temperature import celsius_to_fahrenheit
 
@@ -48,9 +51,9 @@ SENSOR_TEMP = "temperature"
 SENSOR_HUMID = "humidity"
 SENSOR_PRESS = "pressure"
 SENSOR_TYPES = {
-    SENSOR_TEMP: ["Temperature", None],
-    SENSOR_HUMID: ["Humidity", PERCENTAGE],
-    SENSOR_PRESS: ["Pressure", "mb"],
+    SENSOR_TEMP: ["Temperature", None, DEVICE_CLASS_TEMPERATURE],
+    SENSOR_HUMID: ["Humidity", PERCENTAGE, DEVICE_CLASS_HUMIDITY],
+    SENSOR_PRESS: ["Pressure", "mb", DEVICE_CLASS_PRESSURE],
 }
 DEFAULT_MONITORED = [SENSOR_TEMP, SENSOR_HUMID, SENSOR_PRESS]
 
@@ -111,13 +114,11 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     sensor_handler = await hass.async_add_executor_job(BME280Handler, sensor)
 
     dev = []
-    try:
+    with suppress(KeyError):
         for variable in config[CONF_MONITORED_CONDITIONS]:
             dev.append(
                 BME280Sensor(sensor_handler, variable, SENSOR_TYPES[variable][1], name)
             )
-    except KeyError:
-        pass
 
     async_add_entities(dev, True)
 
@@ -136,7 +137,7 @@ class BME280Handler:
         self.sensor.update(first_reading)
 
 
-class BME280Sensor(Entity):
+class BME280Sensor(SensorEntity):
     """Implementation of the BME280 sensor."""
 
     def __init__(self, bme280_client, sensor_type, temp_unit, name):
@@ -148,6 +149,7 @@ class BME280Sensor(Entity):
         self.type = sensor_type
         self._state = None
         self._unit_of_measurement = SENSOR_TYPES[sensor_type][1]
+        self._attr_device_class = SENSOR_TYPES[sensor_type][2]
 
     @property
     def name(self):

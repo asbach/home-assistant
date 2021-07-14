@@ -2,6 +2,7 @@
     "config": {
         "abort": {
             "already_configured": "Controller site is already configured",
+            "configuration_updated": "Configuration updated.",
             "reauth_successful": "Re-authentication was successful"
         },
         "error": {
@@ -9,7 +10,7 @@
             "service_unavailable": "Failed to connect",
             "unknown_client_mac": "No client available on that MAC address"
         },
-        "flow_title": "UniFi Network {site} ({host})",
+        "flow_title": "{site} ({host})",
         "step": {
             "user": {
                 "data": {

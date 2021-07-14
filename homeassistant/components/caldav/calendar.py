@@ -123,7 +123,7 @@ class WebDavCalendarEventDevice(CalendarEventDevice):
         self._offset_reached = False
 
     @property
-    def device_state_attributes(self):
+    def extra_state_attributes(self):
         """Return the device state attributes."""
         return {"offset_reached": self._offset_reached}
 
@@ -173,6 +173,8 @@ class WebDavCalendarData:
         event_list = []
         for event in vevent_list:
             vevent = event.instance.vevent
+            if not self.is_matching(vevent, self.search):
+                continue
             uid = None
             if hasattr(vevent, "uid"):
                 uid = vevent.uid.value
@@ -308,7 +310,9 @@ class WebDavCalendarData:
                 # represent same time regardless of which time zone is currently being observed
                 return obj.replace(tzinfo=dt.DEFAULT_TIME_ZONE)
             return obj
-        return dt.as_local(dt.dt.datetime.combine(obj, dt.dt.time.min))
+        return dt.dt.datetime.combine(obj, dt.dt.time.min).replace(
+            tzinfo=dt.DEFAULT_TIME_ZONE
+        )
 
     @staticmethod
     def get_attr_value(obj, attribute):

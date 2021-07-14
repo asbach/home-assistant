@@ -1,6 +1,7 @@
 """Alexa capabilities."""
+from __future__ import annotations
+
 import logging
-from typing import List, Optional
 
 from homeassistant.components import (
     cover,
@@ -46,7 +47,6 @@ from .const import (
     API_THERMOSTAT_MODES,
     API_THERMOSTAT_PRESETS,
     DATE_FORMAT,
-    PERCENTAGE_FAN_MAP,
     Inputs,
 )
 from .errors import UnsupportedProperty
@@ -73,7 +73,7 @@ class AlexaCapability:
 
     supported_locales = {"en-US"}
 
-    def __init__(self, entity: State, instance: Optional[str] = None):
+    def __init__(self, entity: State, instance: str | None = None) -> None:
         """Initialize an Alexa capability."""
         self.entity = entity
         self.instance = instance
@@ -83,7 +83,7 @@ class AlexaCapability:
         raise NotImplementedError
 
     @staticmethod
-    def properties_supported() -> List[dict]:
+    def properties_supported() -> list[dict]:
         """Return what properties this entity supports."""
         return []
 
@@ -668,9 +668,7 @@ class AlexaPercentageController(AlexaCapability):
             raise UnsupportedProperty(name)
 
         if self.entity.domain == fan.DOMAIN:
-            speed = self.entity.attributes.get(fan.ATTR_SPEED)
-
-            return PERCENTAGE_FAN_MAP.get(speed, 0)
+            return self.entity.attributes.get(fan.ATTR_PERCENTAGE) or 0
 
         if self.entity.domain == cover.DOMAIN:
             return self.entity.attributes.get(cover.ATTR_CURRENT_POSITION, 0)
@@ -1155,11 +1153,7 @@ class AlexaPowerLevelController(AlexaCapability):
             raise UnsupportedProperty(name)
 
         if self.entity.domain == fan.DOMAIN:
-            speed = self.entity.attributes.get(fan.ATTR_SPEED)
-
-            return PERCENTAGE_FAN_MAP.get(speed)
-
-        return None
+            return self.entity.attributes.get(fan.ATTR_PERCENTAGE) or 0
 
 
 class AlexaSecurityPanelController(AlexaCapability):
@@ -1308,6 +1302,12 @@ class AlexaModeController(AlexaCapability):
             if mode in (fan.DIRECTION_FORWARD, fan.DIRECTION_REVERSE, STATE_UNKNOWN):
                 return f"{fan.ATTR_DIRECTION}.{mode}"
 
+        # Fan preset_mode
+        if self.instance == f"{fan.DOMAIN}.{fan.ATTR_PRESET_MODE}":
+            mode = self.entity.attributes.get(fan.ATTR_PRESET_MODE, None)
+            if mode in self.entity.attributes.get(fan.ATTR_PRESET_MODES, None):
+                return f"{fan.ATTR_PRESET_MODE}.{mode}"
+
         # Cover Position
         if self.instance == f"{cover.DOMAIN}.{cover.ATTR_POSITION}":
             # Return state instead of position when using ModeController.
@@ -1344,6 +1344,17 @@ class AlexaModeController(AlexaCapability):
             self._resource.add_mode(
                 f"{fan.ATTR_DIRECTION}.{fan.DIRECTION_REVERSE}", [fan.DIRECTION_REVERSE]
             )
+            return self._resource.serialize_capability_resources()
+
+        # Fan preset_mode
+        if self.instance == f"{fan.DOMAIN}.{fan.ATTR_PRESET_MODE}":
+            self._resource = AlexaModeResource(
+                [AlexaGlobalCatalog.SETTING_PRESET], False
+            )
+            for preset_mode in self.entity.attributes.get(fan.ATTR_PRESET_MODES, []):
+                self._resource.add_mode(
+                    f"{fan.ATTR_PRESET_MODE}.{preset_mode}", [preset_mode]
+                )
             return self._resource.serialize_capability_resources()
 
         # Cover Position Resources
@@ -1923,6 +1934,10 @@ class AlexaEqualizerController(AlexaCapability):
         Either bands, mode or both can be specified. Only mode is supported at this time.
         """
         return [{"name": "mode"}]
+
+    def properties_retrievable(self):
+        """Return True if properties can be retrieved."""
+        return True
 
     def get_property(self, name):
         """Read and return a property."""

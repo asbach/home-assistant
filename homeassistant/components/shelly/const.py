@@ -2,11 +2,15 @@
 
 COAP = "coap"
 DATA_CONFIG_ENTRY = "config_entry"
+DEVICE = "device"
 DOMAIN = "shelly"
 REST = "rest"
 
-# Used to calculate the timeout in "_async_update_data" used for polling data from devices.
-POLLING_TIMEOUT_MULTIPLIER = 1.2
+CONF_COAP_PORT = "coap_port"
+DEFAULT_COAP_PORT = 5683
+
+# Used in "_async_update_data" as timeout for polling data from devices.
+POLLING_TIMEOUT_SEC = 18
 
 # Refresh interval for REST sensors
 REST_SENSORS_UPDATE_INTERVAL = 60
@@ -48,7 +52,7 @@ BASIC_INPUTS_EVENTS_TYPES = {
     "long",
 }
 
-SHBTN_1_INPUTS_EVENTS_TYPES = {
+SHBTN_INPUTS_EVENTS_TYPES = {
     "single",
     "double",
     "triple",
@@ -71,7 +75,28 @@ INPUTS_EVENTS_SUBTYPES = {
     "button3": 3,
 }
 
+SHBTN_MODELS = ["SHBTN-1", "SHBTN-2"]
+
+STANDARD_RGB_EFFECTS = {
+    0: "Off",
+    1: "Meteor Shower",
+    2: "Gradual Change",
+    3: "Flash",
+}
+
+SHBLB_1_RGB_EFFECTS = {
+    0: "Off",
+    1: "Meteor Shower",
+    2: "Gradual Change",
+    3: "Flash",
+    4: "Breath",
+    5: "On/Off Gradual",
+    6: "Red/Green Change",
+}
+
 # Kelvin value for colorTemp
 KELVIN_MAX_VALUE = 6500
-KELVIN_MIN_VALUE = 2700
-KELVIN_MIN_VALUE_SHBLB_1 = 3000
+KELVIN_MIN_VALUE_WHITE = 2700
+KELVIN_MIN_VALUE_COLOR = 3000
+
+UPTIME_DEVIATION = 5

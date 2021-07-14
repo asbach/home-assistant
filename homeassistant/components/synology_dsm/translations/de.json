@@ -1,15 +1,16 @@
 {
     "config": {
         "abort": {
-            "already_configured": "Host bereits konfiguriert"
+            "already_configured": "Ger\u00e4t ist bereits konfiguriert"
         },
         "error": {
-            "cannot_connect": "Verbindungsfehler",
-            "missing_data": "Fehlende Daten: Bitte versuchen Sie es sp\u00e4ter noch einmal oder eine andere Konfiguration",
-            "otp_failed": "Die zweistufige Authentifizierung ist fehlgeschlagen. Versuchen Sie es erneut mit einem neuen Code",
-            "unknown": "Unbekannter Fehler: Bitte \u00fcberpr\u00fcfen Sie die Protokolle, um weitere Details zu erhalten"
+            "cannot_connect": "Verbindung fehlgeschlagen",
+            "invalid_auth": "Ung\u00fcltige Authentifizierung",
+            "missing_data": "Fehlende Daten: Bitte versuche es sp\u00e4ter noch einmal oder eine andere Konfiguration",
+            "otp_failed": "Die zweistufige Authentifizierung ist fehlgeschlagen. Versuche es erneut mit einem neuen Code",
+            "unknown": "Unerwarteter Fehler"
         },
-        "flow_title": "Synology DSM {name} ({host})",
+        "flow_title": "{name} ({host})",
         "step": {
             "2sa": {
                 "data": {
@@ -21,11 +22,11 @@
                 "data": {
                     "password": "Passwort",
                     "port": "Port",
-                    "ssl": "Verwenden Sie SSL/TLS, um eine Verbindung zu Ihrem NAS herzustellen",
+                    "ssl": "Verwendet ein SSL-Zertifikat",
                     "username": "Benutzername",
                     "verify_ssl": "SSL Zertifikat verifizieren"
                 },
-                "description": "M\u00f6chten Sie {name} ({host}) einrichten?",
+                "description": "M\u00f6chtest du {name} ({host}) einrichten?",
                 "title": "Synology DSM"
             },
             "user": {
@@ -33,7 +34,7 @@
                     "host": "Host",
                     "password": "Passwort",
                     "port": "Port",
-                    "ssl": "Verwenden Sie SSL/TLS, um eine Verbindung zu Ihrem NAS herzustellen",
+                    "ssl": "Verwendet ein SSL-Zertifikat",
                     "username": "Benutzername",
                     "verify_ssl": "SSL Zertifikat verifizieren"
                 },

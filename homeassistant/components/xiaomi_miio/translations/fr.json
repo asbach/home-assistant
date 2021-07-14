@@ -6,10 +6,32 @@
         },
         "error": {
             "cannot_connect": "\u00c9chec de connexion",
-            "no_device_selected": "Aucun appareil s\u00e9lectionn\u00e9, veuillez s\u00e9lectionner un appareil."
+            "no_device_selected": "Aucun appareil s\u00e9lectionn\u00e9, veuillez s\u00e9lectionner un appareil.",
+            "unknown_device": "Le mod\u00e8le d'appareil n'est pas connu, impossible de configurer l'appareil \u00e0 l'aide du flux de configuration."
         },
         "flow_title": "Xiaomi Miio: {name}",
         "step": {
+            "cloud": {
+                "data": {
+                    "cloud_password": "Mot de passe cloud",
+                    "cloud_username": "Nom d'utilisateur cloud"
+                }
+            },
+            "connect": {
+                "data": {
+                    "model": "Mod\u00e8le d'appareil"
+                }
+            },
+            "device": {
+                "data": {
+                    "host": "Adresse IP",
+                    "model": "Mod\u00e8le d'appareil (facultatif)",
+                    "name": "Nom de l'appareil",
+                    "token": "Jeton d'API"
+                },
+                "description": "Vous aurez besoin des 32 caract\u00e8res Jeton d'API , voir https://www.home-assistant.io/integrations/vacuum.xiaomi_miio/#retrieving-the-access-token pour les instructions. Veuillez noter que cette Jeton d'API est diff\u00e9rente de la cl\u00e9 utilis\u00e9e par l'int\u00e9gration Xiaomi Aqara.",
+                "title": "Connectez-vous \u00e0 un appareil Xiaomi Miio ou \u00e0 une passerelle Xiaomi"
+            },
             "gateway": {
                 "data": {
                     "host": "Adresse IP",
@@ -19,11 +41,30 @@
                 "description": "Vous aurez besoin du jeton API, voir https://www.home-assistant.io/integrations/vacuum.xiaomi_miio/#retrieving-the-access-token pour les instructions.",
                 "title": "Se connecter \u00e0 la passerelle Xiaomi"
             },
+            "select": {
+                "data": {
+                    "select_device": "Appareil Miio"
+                }
+            },
             "user": {
                 "data": {
                     "gateway": "Se connecter \u00e0 la passerelle Xiaomi"
                 },
                 "description": "S\u00e9lectionnez \u00e0 quel appareil vous souhaitez vous connecter.",
+                "title": "Xiaomi Miio"
+            }
+        }
+    },
+    "options": {
+        "error": {
+            "cloud_credentials_incomplete": "Identifiants cloud incomplets, veuillez renseigner le nom d'utilisateur, le mot de passe et le pays"
+        },
+        "step": {
+            "init": {
+                "data": {
+                    "cloud_subdevices": "Utiliser le cloud pour connecter des sous-appareils"
+                },
+                "description": "Sp\u00e9cifiez les param\u00e8tres optionnels",
                 "title": "Xiaomi Miio"
             }
         }
